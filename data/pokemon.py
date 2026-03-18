@@ -129,8 +129,8 @@ def load_species_pool(cache_dir: str = "") -> list[Species]:
 
     # 2. Fall back to individual files
     if not cache_dir:
-        # pkmn_*.json live in the project root's cache_moves folder
-        cache_path = base / "cache_moves"
+        # pkmn_*.json live in the project root's cache_pokemon folder
+        cache_path = base / "cache_pokemon"
         # Fallback to data/pokeapi_cache if needed
         if not cache_path.exists():
             cache_path = base / "data" / "pokeapi_cache"
