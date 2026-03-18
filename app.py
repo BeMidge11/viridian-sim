@@ -163,7 +163,8 @@ def distribute_bst(bst: int, level: int) -> dict[str, int]:
 # ── Pokémon lookup ─────────────────────────────────────────────────────────────
 @lru_cache(maxsize=1)
 def _pkmn_cache() -> dict:
-    base = pathlib.Path(__file__).parent.parent / "cache_moves"
+    # app.py is in the root, so just look in cache_moves/
+    base = pathlib.Path(__file__).parent / "cache_moves"
     out: dict = {}
     for dex in range(1, 387):
         fp = base / f"pkmn_{dex}.json"
