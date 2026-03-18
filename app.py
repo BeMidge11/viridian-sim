@@ -439,24 +439,24 @@ kb_map = {
 
 active_configs = []
 for i in range(1, 5):
-    if st.session_state[f"w{i}_name"].strip():
+    if st.session_state.get(f"w{i}_name", "").strip():
         active_configs.append(i)
 
 if not active_configs:
     st.error("❌ Enter at least one Pokémon Name."); st.stop()
 
 inventory = {
-    "potion": st.session_state["w_potions"],
-    "super-potion": st.session_state["w_super_potions"],
-    "hyper-potion": st.session_state["w_hyper_potions"],
-    "max-potion": st.session_state["w_max_potions"],
-    "full-heal": st.session_state["w_full_heals"],
-    "full-restore": st.session_state["w_full_restores"],
-    "antidote": st.session_state["w_antidotes"],
-    "paralyze-heal": st.session_state["w_paralyze_heals"],
-    "awakening": st.session_state["w_awakenings"],
-    "burn-heal": st.session_state["w_burn_heals"],
-    "ice-heal": st.session_state["w_ice_heals"],
+    "potion": st.session_state.get("w_potions", 0),
+    "super-potion": st.session_state.get("w_super_potions", 0),
+    "hyper-potion": st.session_state.get("w_hyper_potions", 0),
+    "max-potion": st.session_state.get("w_max_potions", 0),
+    "full-heal": st.session_state.get("w_full_heals", 0),
+    "full-restore": st.session_state.get("w_full_restores", 0),
+    "antidote": st.session_state.get("w_antidotes", 0),
+    "paralyze-heal": st.session_state.get("w_paralyze_heals", 0),
+    "awakening": st.session_state.get("w_awakenings", 0),
+    "burn-heal": st.session_state.get("w_burn_heals", 0),
+    "ice-heal": st.session_state.get("w_ice_heals", 0),
 }
 
 # Run sims
@@ -464,35 +464,37 @@ sim_results = {}
 players = {}
 
 prog = st.progress(0, text="Starting simulations...")
-total_runs = len(active_configs) * st.session_state["n_seeds"]
+total_runs = len(active_configs) * st.session_state.get("n_seeds", 5000)
 
 runs_completed = 0
 for idx in active_configs:
-    raw_moves = [st.session_state[f"w{idx}_move{m}"] for m in (1,2,3,4)]
+    raw_moves = [st.session_state.get(f"w{idx}_move{m}", "") for m in (1,2,3,4)]
     good = [resolve(m) for m in raw_moves if m.strip() and resolve(m)]
     bad  = [m for m in raw_moves if m.strip() and not resolve(m)]
     
-    name = st.session_state[f"w{idx}_name"].strip().title()
+    name = st.session_state.get(f"w{idx}_name", "").strip().title()
     if bad: 
         st.error(f"❌ {name}: Unknown move(s): **{', '.join(bad)}**"); st.stop()
     if not good: 
         st.error(f"❌ {name}: Enter at least one valid move."); st.stop()
         
-    types = (st.session_state[f"w{idx}_type1"],) if st.session_state[f"w{idx}_type2"] == "—" else (st.session_state[f"w{idx}_type1"], st.session_state[f"w{idx}_type2"])
+    t1 = st.session_state.get(f"w{idx}_type1", "normal")
+    t2 = st.session_state.get(f"w{idx}_type2", "—")
+    types = (t1,) if t2 == "—" else (t1, t2)
     
     player = make_player_instance(
-        name=name, types=types, level=int(st.session_state[f"w{idx}_level"]),
-        hp_max=natured(int(st.session_state[f"w{idx}_hp"]), st.session_state[f"w{idx}_hp_ntr"]),
-        atk=natured(int(st.session_state[f"w{idx}_atk"]), st.session_state[f"w{idx}_atk_ntr"]),
-        def_=natured(int(st.session_state[f"w{idx}_def"]), st.session_state[f"w{idx}_def_ntr"]),
-        spatk=natured(int(st.session_state[f"w{idx}_spatk"]), st.session_state[f"w{idx}_spatk_ntr"]),
-        spdef=natured(int(st.session_state[f"w{idx}_spdef"]), st.session_state[f"w{idx}_spdef_ntr"]),
-        spe=natured(int(st.session_state[f"w{idx}_spe"]), st.session_state[f"w{idx}_spe_ntr"]),
+        name=name, types=types, level=int(st.session_state.get(f"w{idx}_level", 8)),
+        hp_max=natured(int(st.session_state.get(f"w{idx}_hp", 15)), st.session_state.get(f"w{idx}_hp_ntr", "·")),
+        atk=natured(int(st.session_state.get(f"w{idx}_atk", 15)), st.session_state.get(f"w{idx}_atk_ntr", "·")),
+        def_=natured(int(st.session_state.get(f"w{idx}_def", 15)), st.session_state.get(f"w{idx}_def_ntr", "·")),
+        spatk=natured(int(st.session_state.get(f"w{idx}_spatk", 15)), st.session_state.get(f"w{idx}_spatk_ntr", "·")),
+        spdef=natured(int(st.session_state.get(f"w{idx}_spdef", 15)), st.session_state.get(f"w{idx}_spdef_ntr", "·")),
+        spe=natured(int(st.session_state.get(f"w{idx}_spe", 15)), st.session_state.get(f"w{idx}_spe_ntr", "·")),
         moveset=good, rng=random.Random(),
-        ability=st.session_state[f"w{idx}_ability"].strip().lower().replace(" ", "-").replace("_", "-") or "none",
-        held_item=st.session_state[f"w{idx}_held_item"],
+        ability=st.session_state.get(f"w{idx}_ability", "none").strip().lower().replace(" ", "-").replace("_", "-") or "none",
+        held_item=st.session_state.get(f"w{idx}_held_item", "none"),
         inventory=dict(inventory),
-        ai_knowledge=kb_map.get(st.session_state["w_ai_knowledge"], "unknown"),
+        ai_knowledge=kb_map.get(st.session_state.get("w_ai_knowledge", "unknown"), "unknown"),
     )
     players[name] = player
     
@@ -500,9 +502,9 @@ for idx in active_configs:
         global runs_completed
         prog.progress(min((runs_completed + done) / total_runs, 1.0), text=f"Simulating {name}… run {done:,} / {total:,}")
 
-    res = run_simulation(player, n_seeds=st.session_state["n_seeds"], progress_callback=_local_prog)
+    res = run_simulation(player, n_seeds=st.session_state.get("n_seeds", 5000), progress_callback=_local_prog)
     sim_results[name] = res
-    runs_completed += st.session_state["n_seeds"]
+    runs_completed += st.session_state.get("n_seeds", 5000)
 
 prog.progress(1.0, text=f"Done!")
 
