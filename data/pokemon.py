@@ -90,11 +90,32 @@ def _parse_species(j: dict, dex: int) -> Species | None:
 
 @lru_cache(maxsize=4)
 def load_species_pool(cache_dir: str = "") -> list[Species]:
-    """Load all Gen 1-3 species from pkmn_*.json PokeAPI cache."""
+    """Load species from consolidated JSON or individual PokeAPI files."""
+    base = pathlib.Path(__file__).parent.parent
+    consolidated_path = base / "data" / "pokemon_consolidated.json"
+
+    # 1. Try consolidated file first
+    if consolidated_path.exists():
+        try:
+            with open(consolidated_path, encoding="utf-8") as f:
+                data = json.load(f)
+            # Reconstruct tuples/lists if needed
+            species_list = []
+            for d in data:
+                # Convert level_up_moves list of lists back to list of tuples
+                if "level_up_moves" in d:
+                    d["level_up_moves"] = tuple(tuple(m) for m in d["level_up_moves"])
+                if "types" in d:
+                    d["types"] = tuple(d["types"])
+                species_list.append(Species(**d))
+            return species_list
+        except Exception as e:
+            print(f"Warning: Failed to load consolidated pokemon: {e}")
+
+    # 2. Fall back to individual files
     if not cache_dir:
-        # pkmn_*.json live in the project root's cache folders
-        base = pathlib.Path(__file__).parent.parent
-        cache_path = base / "cache_pokemon"
+        # pkmn_*.json live in the project root's cache_moves folder
+        cache_path = base / "cache_moves"
         # Fallback to data/pokeapi_cache if needed
         if not cache_path.exists():
             cache_path = base / "data" / "pokeapi_cache"
@@ -102,7 +123,7 @@ def load_species_pool(cache_dir: str = "") -> list[Species]:
         cache_path = pathlib.Path(cache_dir)
 
     if not cache_path.exists():
-        raise FileNotFoundError(f"Pokémon cache not found at {cache_path}")
+        raise FileNotFoundError(f"Pokémon cache not found at {cache_path} or {consolidated_path}")
 
     species_list: list[Species] = []
     for dex in range(1, 387):
