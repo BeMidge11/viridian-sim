@@ -113,16 +113,22 @@ def compatible_base_range_hp(stat_val: int, level: int) -> tuple[int, int]:
             hi = max(hi, base)
     return (lo, hi) if lo <= hi else (1, 255)
 
-def compatible_base_range_stat(stat_val: int, level: int) -> tuple[int, int]:
+def compatible_base_range_stat(stat_val: int, level: int, nature: float = 1.0) -> tuple[int, int]:
     """
     Enumerate every non-HP base stat (1-255) and keep those where IV in [0,31]
-    can produce the observed stat value.  Returns (min_base, max_base).
+    can produce the observed stat value with the given nature multiplier.
+    Returns (min_base, max_base).
     """
     lo, hi = 256, 0
     for base in range(1, 256):
-        s_lo = math.floor((2 * base + 0)  * level / 100) + 5
-        s_hi = math.floor((2 * base + 31) * level / 100) + 5
-        if s_lo <= stat_val <= s_hi:
+        # Stat = floor(floor((2*base + IV)*level/100 + 5) * nature)
+        s_lo_unstaged = math.floor((2 * base + 0)  * level / 100) + 5
+        s_hi_unstaged = math.floor((2 * base + 31) * level / 100) + 5
+        
+        res_lo = math.floor(s_lo_unstaged * nature)
+        res_hi = math.floor(s_hi_unstaged * nature)
+        
+        if res_lo <= stat_val <= res_hi:
             lo = min(lo, base)
             hi = max(hi, base)
     return (lo, hi) if lo <= hi else (1, 255)
@@ -197,18 +203,19 @@ DEFAULTS = {
 }
 for i in range(1, 5):
     DEFAULTS[f"w{i}_name"] = ""
-    DEFAULTS[f"w{i}_level"] = 100
+    DEFAULTS[f"w{i}_level"] = 8
     DEFAULTS[f"w{i}_type1"] = "normal"
     DEFAULTS[f"w{i}_type2"] = "—"
     DEFAULTS[f"w{i}_bst"] = 0
-    DEFAULTS[f"w{i}_hp"] = 100
-    DEFAULTS[f"w{i}_atk"] = 100
-    DEFAULTS[f"w{i}_def"] = 100
-    DEFAULTS[f"w{i}_spatk"] = 100
-    DEFAULTS[f"w{i}_spdef"] = 100
-    DEFAULTS[f"w{i}_spe"] = 100
-    for s in ["hp", "atk", "def", "spatk", "spdef", "spe"]:
-        DEFAULTS[f"w{i}_{s}_ntr"] = "·"
+    DEFAULTS[f"w{i}_hp"] = 15
+    DEFAULTS[f"w{i}_atk"] = 15
+    DEFAULTS[f"w{i}_def"] = 15
+    DEFAULTS[f"w{i}_spatk"] = 15
+    DEFAULTS[f"w{i}_spdef"] = 15
+    DEFAULTS[f"w{i}_spe"] = 15
+    for s in ["atk", "def", "spatk", "spdef", "spe"]:
+        DEFAULTS[f"w{i}_{s}_pos"] = False
+        DEFAULTS[f"w{i}_{s}_neg"] = False
     DEFAULTS[f"w{i}_move1"] = ""
     DEFAULTS[f"w{i}_move2"] = ""
     DEFAULTS[f"w{i}_move3"] = ""
@@ -225,7 +232,10 @@ for k, v in DEFAULTS.items():
 
 def render_mon_tab(idx):
     c1, c2 = st.columns([2,1])
-    with c1: st.text_input("Name", key=f"w{idx}_name")
+    names = [""] + list(_pkmn_cache().keys())
+    cur_n = st.session_state[f"w{idx}_name"].lower()
+    n_idx = names.index(cur_n) if cur_n in names else 0
+    with c1: st.selectbox("Name (Autocomplete)", names, index=n_idx, key=f"w{idx}_name")
     with c2: st.number_input("Level", 1, 100, key=f"w{idx}_level")
 
     # autofill
@@ -253,6 +263,18 @@ def render_mon_tab(idx):
     if st.session_state[msg_key]:
         st.markdown(f'<div class="autofill-banner">{st.session_state[msg_key]}</div>', unsafe_allow_html=True)
         st.session_state[msg_key] = ""
+    
+    # Check species for specific auto-complete lists
+    s_obj = lookup_pokemon(st.session_state[f"w{idx}_name"])
+    species_moves = list(set([m[1] for m in s_obj.level_up_moves])) if s_obj else []
+    species_abilities = list(s_obj.abilities) if s_obj else []
+    
+    from data.moves import load_move_pool
+    all_moves = sorted([m.name for m in load_move_pool()])
+    all_abilities_set = set()
+    for s in _pkmn_cache().values():
+        for ab in s.abilities: all_abilities_set.add(ab)
+    all_abilities = sorted(list(all_abilities_set))
 
     ct1, ct2 = st.columns(2)
     t1 = st.session_state[f"w{idx}_type1"]
@@ -263,39 +285,73 @@ def render_mon_tab(idx):
     with ct1: st.selectbox("Type 1", ALL_TYPES, index=t1_idx, key=f"w{idx}_type1")
     with ct2: st.selectbox("Type 2 (opt)", t2_opts, index=t2_idx, key=f"w{idx}_type2")
 
-    st.markdown('<div class="section-header">Stats &amp; BST</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Stats &amp; BST Estimation</div>', unsafe_allow_html=True)
     lv = int(st.session_state[f"w{idx}_level"])
-    raw_ranges = [
-        compatible_base_range_hp(int(st.session_state[f"w{idx}_hp"]), lv),
-        compatible_base_range_stat(int(st.session_state[f"w{idx}_atk"]), lv),
-        compatible_base_range_stat(int(st.session_state[f"w{idx}_def"]), lv),
-        compatible_base_range_stat(int(st.session_state[f"w{idx}_spatk"]), lv),
-        compatible_base_range_stat(int(st.session_state[f"w{idx}_spdef"]), lv),
-        compatible_base_range_stat(int(st.session_state[f"w{idx}_spe"]), lv),
-    ]
+    
+    # HP never has nature
+    raw_ranges = [compatible_base_range_hp(int(st.session_state[f"w{idx}_hp"]), lv)]
+    
+    # Other stats
+    for s_k in ["atk", "def", "spatk", "spdef", "spe"]:
+        is_pos = st.session_state.get(f"w{idx}_{s_k}_pos")
+        is_neg = st.session_state.get(f"w{idx}_{s_k}_neg")
+        mult = 1.0
+        if is_pos and not is_neg: mult = 1.1
+        elif is_neg and not is_pos: mult = 0.9
+        raw_ranges.append(compatible_base_range_stat(int(st.session_state[f"w{idx}_{s_k}"]), lv, mult))
+
     range_keys = ["hp", "atk", "def", "spatk", "spdef", "spe"]
     known_bst = int(st.session_state[f"w{idx}_bst"] or 0)
     pt_estimates = bst_constrained_estimate(raw_ranges, known_bst) if known_bst > 0 else [round((lo + hi) / 2) for lo, hi in raw_ranges]
     rev_bases = dict(zip(range_keys, pt_estimates))
     rev_ranges = dict(zip(range_keys, raw_ranges))
+    
+    st.number_input("BST Total", 0, 780, key=f"w{idx}_bst")
+    
+    # HP Row
+    s_key, label = "hp", "HP"
+    base_pt, (lo, hi) = rev_bases[s_key], rev_ranges[s_key]
+    cs, cv, cn = st.columns([2, 3, 2])
+    with cs: st.markdown(f'<div style="padding-top:24px;line-height:1.3;"><span style="color:#94a3b8;font-size:.75rem;">{label}</span><br><span style="color:#34d399;font-weight:700;font-size:.78rem;">~{base_pt}</span><span style="color:#475569;font-size:.65rem;"> [{lo}–{hi}]</span></div>', unsafe_allow_html=True)
+    with cv: st.number_input(label, 1, 999, key=f"w{idx}_{s_key}", label_visibility="collapsed")
+    with cn: st.markdown('<div style="margin-top:22px;color:#475569;font-size:.7rem;text-align:center;">Fixed</div>', unsafe_allow_html=True)
 
-    st.number_input("BST", 0, 780, key=f"w{idx}_bst")
-    stat_pairs = [("hp","HP"), ("atk","Atk"), ("def","Def"), ("spatk","SpAtk"), ("spdef","SpDef"), ("spe","Spe")]
+    # Other stats with Nature checkboxes
+    stat_pairs = [("atk","Atk"), ("def","Def"), ("spatk","SpAtk"), ("spdef","SpDef"), ("spe","Spe")]
     for s_key, label in stat_pairs:
         base_pt, (lo, hi) = rev_bases[s_key], rev_ranges[s_key]
         cs, cv, cn = st.columns([2, 3, 2])
         with cs: st.markdown(f'<div style="padding-top:24px;line-height:1.3;"><span style="color:#94a3b8;font-size:.75rem;">{label}</span><br><span style="color:#34d399;font-weight:700;font-size:.78rem;">~{base_pt}</span><span style="color:#475569;font-size:.65rem;"> [{lo}–{hi}]</span></div>', unsafe_allow_html=True)
         with cv: st.number_input(label, 1, 999, key=f"w{idx}_{s_key}", label_visibility="collapsed")
-        with cn: st.select_slider(f"Nature {label}", options=NATURE_OPTS, key=f"w{idx}_{s_key}_ntr", label_visibility="collapsed")
+        
+        # Nature checkboxes
+        with cn:
+            n1, n2 = st.columns(2)
+            with n1: st.checkbox("+", key=f"w{idx}_{s_key}_pos")
+            with n2: st.checkbox("−", key=f"w{idx}_{s_key}_neg")
 
-    st.markdown('<div class="section-header">Moves</div>', unsafe_allow_html=True)
-    st.text_input("Move 1", key=f"w{idx}_move1")
-    st.text_input("Move 2", key=f"w{idx}_move2")
-    st.text_input("Move 3", key=f"w{idx}_move3")
-    st.text_input("Move 4", key=f"w{idx}_move4")
+    st.markdown('<div class="section-header">Moves & Ability (Autocomplete as Typed)</div>', unsafe_allow_html=True)
+    
+    # Move choices: show species moves first, then others
+    other_moves = sorted(list(set(all_moves) - set(species_moves)))
+    move_opts = sorted(species_moves) + ["--- ALL MOVES ---"] + other_moves
+    if "" not in move_opts: move_opts = [""] + move_opts
+    
+    def get_idx(val, opts):
+        if val in opts: return opts.index(val)
+        return 0
 
-    st.markdown('<div class="section-header">Ability & Item</div>', unsafe_allow_html=True)
-    st.text_input("Ability", key=f"w{idx}_ability")
+    st.selectbox("Move 1", move_opts, index=get_idx(st.session_state[f"w{idx}_move1"], move_opts), key=f"w{idx}_move1")
+    st.selectbox("Move 2", move_opts, index=get_idx(st.session_state[f"w{idx}_move2"], move_opts), key=f"w{idx}_move2")
+    st.selectbox("Move 3", move_opts, index=get_idx(st.session_state[f"w{idx}_move3"], move_opts), key=f"w{idx}_move3")
+    st.selectbox("Move 4", move_opts, index=get_idx(st.session_state[f"w{idx}_move4"], move_opts), key=f"w{idx}_move4")
+
+    # Ability choices: species abilities first
+    other_abs = sorted(list(set(all_abilities) - set(species_abilities)))
+    ab_opts = sorted(species_abilities) + ["--- ALL ABILITIES ---"] + other_abs
+    if "none" not in ab_opts: ab_opts = ["none"] + ab_opts
+    st.selectbox("Ability", ab_opts, index=get_idx(st.session_state[f"w{idx}_ability"], ab_opts), key=f"w{idx}_ability")
+    
     from sim.randomizer import VALID_BERRIES
     st.selectbox("Held Item (Berry)", ["none"] + VALID_BERRIES, key=f"w{idx}_held_item")
 
