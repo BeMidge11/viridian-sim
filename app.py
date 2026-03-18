@@ -173,7 +173,10 @@ def _pkmn_cache() -> dict[str, Species]:
     from data.pokemon import load_species_pool
     try:
         pool = load_species_pool()
-        return {s.name.lower(): s for s in pool}
+        if not pool:
+            st.error("No Pokémon species found. Check your data files.")
+            return {}
+        return {s.name.lower(): s for s in pool if hasattr(s, 'name')}
     except Exception as e:
         st.error(f"Error loading Pokémon data: {e}")
         return {}
@@ -187,8 +190,8 @@ def lookup_pokemon(slug: str) -> Species | None:
 
 def parse_pkmn(s: Species) -> dict:
     return {
-        "types": list(s.types), 
-        "bst": s.bst,
+        "types": list(s.types) if hasattr(s, 'types') else ["normal"], 
+        "bst": s.bst if hasattr(s, 'bst') else 0,
     }
 
 
@@ -243,16 +246,17 @@ def render_mon_tab(idx):
     prev_name_key = f"_w{idx}_prev_name"
     if cur_name and cur_name != st.session_state[prev_name_key]:
         s = lookup_pokemon(cur_name)
-        if s:
+        if s and hasattr(s, 'name'):
             from data.moves import load_move_pool
-            pool_names = {m.name for m in load_move_pool()}
+            mv_pool = load_move_pool()
+            pool_names = {m.name for m in mv_pool if hasattr(m, 'name')}
             pd = parse_pkmn(s)
             if pd:
                 types = pd["types"]
                 st.session_state[f"w{idx}_type1"] = types[0]
                 st.session_state[f"w{idx}_type2"] = types[1] if len(types) > 1 else "—"
                 st.session_state[f"w{idx}_bst"]   = pd["bst"]
-                actual_name = s.name
+                actual_name = s.name if hasattr(s, 'name') else cur_name
                 st.session_state[prev_name_key] = actual_name
                 st.session_state[f"_w{idx}_prev_bst"] = pd["bst"]
                 st.session_state[f"_w{idx}_af_msg"] = f"✓ Autofilled from {actual_name.title()}"
@@ -266,14 +270,20 @@ def render_mon_tab(idx):
     
     # Check species for specific auto-complete lists
     s_obj = lookup_pokemon(st.session_state[f"w{idx}_name"])
-    species_moves = list(set([m[1] for m in s_obj.level_up_moves])) if s_obj else []
-    species_abilities = list(s_obj.abilities) if s_obj else []
+    species_moves = []
+    species_abilities = []
+    if s_obj and hasattr(s_obj, 'level_up_moves'):
+        species_moves = list(set([m[1] for m in s_obj.level_up_moves]))
+    if s_obj and hasattr(s_obj, 'abilities'):
+        species_abilities = list(s_obj.abilities)
     
     from data.moves import load_move_pool
-    all_moves = sorted([m.name for m in load_move_pool()])
+    mv_pool = load_move_pool()
+    all_moves = sorted([m.name for m in mv_pool if hasattr(m, 'name')])
     all_abilities_set = set()
     for s in _pkmn_cache().values():
-        for ab in s.abilities: all_abilities_set.add(ab)
+        if hasattr(s, 'abilities'):
+            for ab in s.abilities: all_abilities_set.add(ab)
     all_abilities = sorted(list(all_abilities_set))
 
     ct1, ct2 = st.columns(2)
