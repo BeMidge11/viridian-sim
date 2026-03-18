@@ -216,9 +216,9 @@ for i in range(1, 5):
     DEFAULTS[f"w{i}_spatk"] = 15
     DEFAULTS[f"w{i}_spdef"] = 15
     DEFAULTS[f"w{i}_spe"] = 15
+    DEFAULTS[f"w{i}_hp_ntr"] = "·"
     for s in ["atk", "def", "spatk", "spdef", "spe"]:
-        DEFAULTS[f"w{i}_{s}_pos"] = False
-        DEFAULTS[f"w{i}_{s}_neg"] = False
+        DEFAULTS[f"w{i}_{s}_ntr"] = "·"
     DEFAULTS[f"w{i}_move1"] = ""
     DEFAULTS[f"w{i}_move2"] = ""
     DEFAULTS[f"w{i}_move3"] = ""
@@ -303,11 +303,8 @@ def render_mon_tab(idx):
     
     # Other stats
     for s_k in ["atk", "def", "spatk", "spdef", "spe"]:
-        is_pos = st.session_state.get(f"w{idx}_{s_k}_pos")
-        is_neg = st.session_state.get(f"w{idx}_{s_k}_neg")
-        mult = 1.0
-        if is_pos and not is_neg: mult = 1.1
-        elif is_neg and not is_pos: mult = 0.9
+        ntr = st.session_state.get(f"w{idx}_{s_k}_ntr", "·")
+        mult = 1.1 if ntr == "+" else (0.9 if ntr == "−" else 1.0)
         raw_ranges.append(compatible_base_range_stat(int(st.session_state[f"w{idx}_{s_k}"]), lv, mult))
 
     range_keys = ["hp", "atk", "def", "spatk", "spdef", "spe"]
@@ -321,24 +318,28 @@ def render_mon_tab(idx):
     # HP Row
     s_key, label = "hp", "HP"
     base_pt, (lo, hi) = rev_bases[s_key], rev_ranges[s_key]
-    cs, cv, cn = st.columns([2, 3, 2])
+    cs, cv, cn = st.columns([2.5, 2.5, 5.0])
     with cs: st.markdown(f'<div style="padding-top:24px;line-height:1.3;"><span style="color:#94a3b8;font-size:.75rem;">{label}</span><br><span style="color:#34d399;font-weight:700;font-size:.78rem;">~{base_pt}</span><span style="color:#475569;font-size:.65rem;"> [{lo}–{hi}]</span></div>', unsafe_allow_html=True)
     with cv: st.number_input(label, 1, 999, key=f"w{idx}_{s_key}", label_visibility="collapsed")
     with cn: st.markdown('<div style="margin-top:22px;color:#475569;font-size:.7rem;text-align:center;">Fixed</div>', unsafe_allow_html=True)
 
-    # Other stats with Nature checkboxes
+    # Other stats with Nature radio buttons
     stat_pairs = [("atk","Atk"), ("def","Def"), ("spatk","SpAtk"), ("spdef","SpDef"), ("spe","Spe")]
     for s_key, label in stat_pairs:
         base_pt, (lo, hi) = rev_bases[s_key], rev_ranges[s_key]
-        cs, cv, cn = st.columns([2, 3, 2])
+        cs, cv, cn = st.columns([2.5, 2.5, 5.0])
         with cs: st.markdown(f'<div style="padding-top:24px;line-height:1.3;"><span style="color:#94a3b8;font-size:.75rem;">{label}</span><br><span style="color:#34d399;font-weight:700;font-size:.78rem;">~{base_pt}</span><span style="color:#475569;font-size:.65rem;"> [{lo}–{hi}]</span></div>', unsafe_allow_html=True)
         with cv: st.number_input(label, 1, 999, key=f"w{idx}_{s_key}", label_visibility="collapsed")
         
-        # Nature checkboxes
+        # Nature Buttons (Mutually Exclusive)
         with cn:
-            n1, n2 = st.columns(2)
-            with n1: st.checkbox("+", key=f"w{idx}_{s_key}_pos")
-            with n2: st.checkbox("−", key=f"w{idx}_{s_key}_neg")
+            cur_ntr = st.session_state.get(f"w{idx}_{s_key}_ntr", "·")
+            # Use segmented_control if available (modern Streamlit), else fallback to radio
+            if hasattr(st, "segmented_control"):
+                st.segmented_control(label, NATURE_OPTS, key=f"w{idx}_{s_key}_ntr", label_visibility="collapsed")
+            else:
+                sel_idx = NATURE_OPTS.index(cur_ntr) if cur_ntr in NATURE_OPTS else 1
+                st.radio(label, NATURE_OPTS, index=sel_idx, key=f"w{idx}_{s_key}_ntr", horizontal=True, label_visibility="collapsed")
 
     st.markdown('<div class="section-header">Moves & Ability (Autocomplete as Typed)</div>', unsafe_allow_html=True)
     
