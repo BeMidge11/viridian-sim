@@ -13,6 +13,7 @@ from functools import lru_cache
 
 import streamlit as st
 import plotly.graph_objects as go
+from data.pokemon import Species
 
 st.set_page_config(
     page_title="Viridian Forest Simulator",
@@ -162,66 +163,27 @@ def distribute_bst(bst: int, level: int) -> dict[str, int]:
 
 # ── Pokémon lookup ─────────────────────────────────────────────────────────────
 @lru_cache(maxsize=1)
-def _pkmn_cache() -> dict:
-    # app.py is in the root, so just look in cache_moves/
-    base = pathlib.Path(__file__).parent / "cache_moves"
-    out: dict = {}
-    for dex in range(1, 387):
-        fp = base / f"pkmn_{dex}.json"
-        if not fp.exists(): continue
-        try:
-            j = json.load(open(fp, encoding="utf-8"))
-            n = j.get("name","")
-            if n: out[n.lower()] = j
-        except Exception: pass
-    return out
+def _pkmn_cache() -> dict[str, Species]:
+    from data.pokemon import load_species_pool
+    try:
+        pool = load_species_pool()
+        return {s.name.lower(): s for s in pool}
+    except Exception as e:
+        st.error(f"Error loading Pokémon data: {e}")
+        return {}
 
-def lookup_pokemon(slug: str):
+def lookup_pokemon(slug: str) -> Species | None:
     c = _pkmn_cache()
     slug = slug.lower().strip().replace(" ","-").replace("_","-")
     if slug in c: return c[slug]
     m = [k for k in c if slug in k]
-    return c[m[0]] if len(m)==1 else None
+    return c[m[0]] if len(m) == 1 else None
 
-def parse_pkmn(j: dict, level: int) -> dict | None:
-    vt = set(TYPE_COLOURS)
-    types = [s["type"]["name"] for s in (j.get("types") or []) if s.get("type",{}).get("name") in vt]
-    if not types: return None
-    raw = {e["stat"]["name"]: int(e.get("base_stat",0)) for e in (j.get("stats") or []) if e.get("stat",{}).get("name") in STAT_KEY_MAP}
-    bases = {STAT_KEY_MAP[k]: v for k,v in raw.items()}
-    bst = sum(raw.values())
-    abilities = [a["ability"]["name"] for a in (j.get("abilities") or []) if not a.get("is_hidden",False)]
-    lv_moves: list[tuple[int,str]] = []
-    for m in (j.get("moves") or []):
-        mn = (m.get("move") or {}).get("name");
-        if not mn: continue
-        for v in (m.get("version_group_details") or []):
-            if v.get("version_group",{}).get("name") in {"firered-leafgreen","ruby-sapphire","emerald"} \
-               and v.get("move_learn_method",{}).get("name") == "level-up":
-                lv_moves.append((int(v.get("level_learned_at",1)), mn)); break
-    lv_moves.sort()
+def parse_pkmn(s: Species) -> dict:
     return {
-        "types": types, "bst": bst,
-        "hp":    gen3_hp(bases.get("hp",45), level),
-        "atk":   gen3_stat(bases.get("atk",45), level),
-        "def_":  gen3_stat(bases.get("def",45), level),
-        "spatk": gen3_stat(bases.get("spatk",45), level),
-        "spdef": gen3_stat(bases.get("spdef",45), level),
-        "spe":   gen3_stat(bases.get("spe",45), level),
-        "abilities": abilities, "lv_moves": lv_moves,
+        "types": list(s.types), 
+        "bst": s.bst,
     }
-
-def autofill_moves(lv_moves, level, pool_names):
-    known, seen = [], set()
-    for lv, slug in reversed(lv_moves):
-        if lv <= level and slug not in seen and slug in pool_names:
-            known.insert(0, slug); seen.add(slug)
-        if len(known) >= 4: break
-    for lv, slug in lv_moves:
-        if slug not in seen and slug in pool_names:
-            known.append(slug); seen.add(slug)
-        if len(known) >= 4: break
-    return known[:4]
 
 
 # ── Session state defaults ────────────────────────────────────────────────────
@@ -234,24 +196,24 @@ DEFAULTS = {
     "n_seeds": 5000,
 }
 for i in range(1, 5):
-    DEFAULTS[f"w{i}_name"] = "Kingler" if i == 1 else ""
-    DEFAULTS[f"w{i}_level"] = 9 if i == 1 else 9
-    DEFAULTS[f"w{i}_type1"] = "water" if i == 1 else "normal"
+    DEFAULTS[f"w{i}_name"] = ""
+    DEFAULTS[f"w{i}_level"] = 100
+    DEFAULTS[f"w{i}_type1"] = "normal"
     DEFAULTS[f"w{i}_type2"] = "—"
     DEFAULTS[f"w{i}_bst"] = 0
-    DEFAULTS[f"w{i}_hp"] = 44 if i == 1 else 45
-    DEFAULTS[f"w{i}_atk"] = 10 if i == 1 else 45
-    DEFAULTS[f"w{i}_def"] = 16 if i == 1 else 45
-    DEFAULTS[f"w{i}_spatk"] = 29 if i == 1 else 45
-    DEFAULTS[f"w{i}_spdef"] = 26 if i == 1 else 45
-    DEFAULTS[f"w{i}_spe"] = 9 if i == 1 else 45
+    DEFAULTS[f"w{i}_hp"] = 100
+    DEFAULTS[f"w{i}_atk"] = 100
+    DEFAULTS[f"w{i}_def"] = 100
+    DEFAULTS[f"w{i}_spatk"] = 100
+    DEFAULTS[f"w{i}_spdef"] = 100
+    DEFAULTS[f"w{i}_spe"] = 100
     for s in ["hp", "atk", "def", "spatk", "spdef", "spe"]:
         DEFAULTS[f"w{i}_{s}_ntr"] = "·"
-    DEFAULTS[f"w{i}_move1"] = "screech" if i == 1 else ""
-    DEFAULTS[f"w{i}_move2"] = "flame-wheel" if i == 1 else ""
-    DEFAULTS[f"w{i}_move3"] = "fire-blast" if i == 1 else ""
-    DEFAULTS[f"w{i}_move4"] = "mirror-coat" if i == 1 else ""
-    DEFAULTS[f"w{i}_ability"] = "pressure" if i == 1 else "none"
+    DEFAULTS[f"w{i}_move1"] = ""
+    DEFAULTS[f"w{i}_move2"] = ""
+    DEFAULTS[f"w{i}_move3"] = ""
+    DEFAULTS[f"w{i}_move4"] = ""
+    DEFAULTS[f"w{i}_ability"] = "none"
     DEFAULTS[f"w{i}_held_item"] = "none"
     DEFAULTS[f"_w{i}_prev_name"] = ""
     DEFAULTS[f"_w{i}_prev_bst"] = 0
@@ -270,27 +232,17 @@ def render_mon_tab(idx):
     cur_name = st.session_state[f"w{idx}_name"].lower().strip().replace(" ","-").replace("_","-")
     prev_name_key = f"_w{idx}_prev_name"
     if cur_name and cur_name != st.session_state[prev_name_key]:
-        pj = lookup_pokemon(cur_name)
-        if pj:
+        s = lookup_pokemon(cur_name)
+        if s:
             from data.moves import load_move_pool
             pool_names = {m.name for m in load_move_pool()}
-            pd = parse_pkmn(pj, int(st.session_state[f"w{idx}_level"]))
+            pd = parse_pkmn(s)
             if pd:
                 types = pd["types"]
                 st.session_state[f"w{idx}_type1"] = types[0]
                 st.session_state[f"w{idx}_type2"] = types[1] if len(types) > 1 else "—"
                 st.session_state[f"w{idx}_bst"]   = pd["bst"]
-                st.session_state[f"w{idx}_hp"]    = pd["hp"]
-                st.session_state[f"w{idx}_atk"]   = pd["atk"]
-                st.session_state[f"w{idx}_def"]   = pd["def_"]
-                st.session_state[f"w{idx}_spatk"] = pd["spatk"]
-                st.session_state[f"w{idx}_spdef"] = pd["spdef"]
-                st.session_state[f"w{idx}_spe"]   = pd["spe"]
-                if pd["abilities"]: st.session_state[f"w{idx}_ability"] = pd["abilities"][0]
-                moves = autofill_moves(pd["lv_moves"], int(st.session_state[f"w{idx}_level"]), pool_names)
-                for i, key in enumerate(["move1","move2","move3","move4"]):
-                    st.session_state[f"w{idx}_{key}"] = moves[i] if i < len(moves) else ""
-                actual_name = pj.get("name","")
+                actual_name = s.name
                 st.session_state[prev_name_key] = actual_name
                 st.session_state[f"_w{idx}_prev_bst"] = pd["bst"]
                 st.session_state[f"_w{idx}_af_msg"] = f"✓ Autofilled from {actual_name.title()}"
