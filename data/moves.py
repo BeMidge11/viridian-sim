@@ -188,20 +188,35 @@ def _parse_move(j: dict) -> Move | None:
 
 @lru_cache(maxsize=4)
 def load_move_pool(cache_dir: str = "") -> list[Move]:
-    """Load all valid Gen 1-3 damaging moves from PokeAPI JSON cache.
+    """Load moves from consolidated JSON or individual PokeAPI files."""
+    base = pathlib.Path(__file__).parent.parent
+    consolidated_path = base / "data" / "moves_consolidated.json"
 
-    cache_dir: path string to the folder with move_*.json files.
-               Pass empty string ("") to use the default (auto-detected).
-    """
+    # 1. Try consolidated file first (best for deployment)
+    if consolidated_path.exists():
+        try:
+            with open(consolidated_path, encoding="utf-8") as f:
+                data = json.load(f)
+            # Reconstruct tuples/lists if needed
+            moves_list = []
+            for d in data:
+                # Convert list of lists back to list of tuples for stat_changes
+                if "stat_changes" in d and d["stat_changes"]:
+                    d["stat_changes"] = [tuple(sc) for sc in d["stat_changes"]]
+                moves_list.append(Move(**d))
+            return moves_list
+        except Exception as e:
+            print(f"Warning: Failed to load consolidated moves: {e}")
+
+    # 2. Fall back to individual files
     if not cache_dir:
         # __file__ is data/moves.py, so .parent is data/, .parent.parent is project root
-        base = pathlib.Path(__file__).parent.parent
         cache_path = base / "cache_moves"
     else:
         cache_path = pathlib.Path(cache_dir)
 
     if not cache_path.exists():
-        raise FileNotFoundError(f"Move cache not found at {cache_path}")
+        raise FileNotFoundError(f"Move cache not found at {cache_path} or {consolidated_path}")
 
     moves: list[Move] = []
     seen: set[str] = set()
