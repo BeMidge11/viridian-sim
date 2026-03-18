@@ -92,12 +92,12 @@ def _parse_species(j: dict, dex: int) -> Species | None:
 def load_species_pool(cache_dir: str = "") -> list[Species]:
     """Load all Gen 1-3 species from pkmn_*.json PokeAPI cache."""
     if not cache_dir:
-        # pkmn_*.json live in D:\OLDPC\New folder\cache_moves (parent of viridian-sim)
-        base = pathlib.Path(__file__).parent.parent.parent
-        cache_path = base / "cache_moves"
-        # Fallback to data/pokeapi_cache inside viridian-sim
-        if not (cache_path / "pkmn_1.json").exists():
-            cache_path = pathlib.Path(__file__).parent.parent / "data" / "pokeapi_cache"
+        # pkmn_*.json live in the project root's cache folders
+        base = pathlib.Path(__file__).parent.parent
+        cache_path = base / "cache_pokemon"
+        # Fallback to data/pokeapi_cache if needed
+        if not cache_path.exists():
+            cache_path = base / "data" / "pokeapi_cache"
     else:
         cache_path = pathlib.Path(cache_dir)
 
