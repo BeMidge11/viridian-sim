@@ -194,7 +194,8 @@ def load_move_pool(cache_dir: str = "") -> list[Move]:
                Pass empty string ("") to use the default (auto-detected).
     """
     if not cache_dir:
-        base = pathlib.Path(__file__).parent.parent.parent
+        # __file__ is data/moves.py, so .parent is data/, .parent.parent is project root
+        base = pathlib.Path(__file__).parent.parent
         cache_path = base / "cache_moves"
     else:
         cache_path = pathlib.Path(cache_dir)
